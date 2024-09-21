@@ -1,0 +1,21 @@
+services:
+  pihole:
+    container_name: pihole
+    image: pihole/pihole:latest
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "80:80/tcp"
+    environment:
+      TZ: "Europe/Rome"
+      WEBPASSWORD: ${WEBPASSWORD}
+    volumes:
+      - pihole-config:/etc/pihole
+      - pihole-dnsmasq:/etc/dnsmasq.d
+    restart: unless-stopped
+
+volumes:
+  pihole-config:
+    name: "pihole-config"
+  pihole-dnsmasq:
+    name: "pihole-dnsmasq"
