@@ -1,0 +1,21 @@
+services:
+  minecraft-server:
+    container_name: minecraft-server
+    image: itzg/minecraft-server:latest
+    tty: true
+    stdin_open: true
+    ports:
+      - "25565:25565/tcp"
+    environment:
+      MEMORY: "4G"
+      EULA: "true"
+      MOTD: "Just a Minecraft server"
+      DIFFICULTY: "hard"
+      MAX_PLAYERS: "3"
+      FORCE_GAMEMODE: "true"
+      SNOOPER_ENABLED: "false"
+      MAX_BUILD_HEIGHT: "1024"
+      MODE: "survival"
+      LEVEL_TYPE: "large_biomes"
+    volumes:
+      - ./minecraft:/data
