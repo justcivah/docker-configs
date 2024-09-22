@@ -2,8 +2,6 @@ services:
   minecraft-server:
     container_name: minecraft-server
     image: itzg/minecraft-server:latest
-    tty: true
-    stdin_open: true
     ports:
       - "25565:25565/tcp"
     environment:
@@ -18,4 +16,11 @@ services:
       MODE: "survival"
       LEVEL_TYPE: "large_biomes"
     volumes:
-      - ./minecraft:/data
+      - minecraft-server-data:/data
+    tty: true
+    stdin_open: true
+    restart: unless-stopped
+
+volumes:
+  minecraft-server-data:
+    name: "minecraft-server-data"
