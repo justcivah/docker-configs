@@ -9,7 +9,7 @@ PUBLIC_IP=$(curl -s ifconfig.me)
 
 # Update the DNS record with the new IP address, and capture the response
 API_URL="https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$DNS_RECORD_ID"
-PAYLOAD="{\"type\":\"A\",\"name\":\"@\",\"content\":\"$PUBLIC_IP\",\"proxied\":true,\"ttl\":3600}"
+PAYLOAD="{\"type\":\"A\",\"name\":\"@\",\"content\":\"$PUBLIC_IP\",\"proxied\":false,\"ttl\":3600}"
 
 RESPONSE=$(curl \
   --request PATCH \
