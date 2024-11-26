@@ -1,10 +1,11 @@
 # Base image
 FROM debian:latest
 
-# Install necessary packages
+# Install necessary packages and clean cache
 RUN apt-get update && \
     apt-get install -y cron curl && \
     apt-get clean
+    rm -rf /var/lib/apt/lists/*
 
 # Create the script directory
 WORKDIR /app
