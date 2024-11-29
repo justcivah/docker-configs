@@ -1,0 +1,15 @@
+services:
+  sftp:
+    container_name: sftp
+    build: .
+    image: sftp:latest
+    ports:
+      - "991:22/tcp"
+    volumes:
+      - sftp-data:/sftp
+    command: ["/app/init.sh"]
+    restart: unless-stopped
+
+volumes:
+  sftp-data:
+    name: "sftp-data"

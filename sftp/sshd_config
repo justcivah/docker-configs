@@ -1,0 +1,20 @@
+# Basic SSH configuration
+Port 22
+Protocol 2
+PermitRootLogin no
+MaxAuthTries 5
+PasswordAuthentication yes
+PubkeyAuthentication yes
+ChallengeResponseAuthentication no
+UsePAM no
+AllowTcpForwarding no
+X11Forwarding no
+PrintMotd no
+Subsystem sftp internal-sftp
+
+# Restrict users to SFTP only and chroot them
+Match Group sftpusers
+    ChrootDirectory /sftp/%u
+    ForceCommand internal-sftp
+    AllowTcpForwarding no
+    X11Forwarding no

@@ -1,0 +1,14 @@
+services:
+  sftp:
+    container_name: sftp
+    build: .
+      ports:
+      - "2222:22"
+    environment:
+      - SFTP_PORT=22
+    volumes:
+      - sftp-data:/sftp
+    entrypoint: ["/app/setup_sftp_users.sh"]
+
+volumes:
+  sftp-data:
