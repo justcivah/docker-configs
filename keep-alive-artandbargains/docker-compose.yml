@@ -1,0 +1,7 @@
+services:
+  keep-alive-artandbargains:
+    build: .
+    container_name: keep-alive-artandbargains
+    environment:
+      - SERVER_URL=https://backend-a2jy.onrender.com/api/keep/alive
+    restart: unless-stopped
