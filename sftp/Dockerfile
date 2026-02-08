@@ -29,3 +29,8 @@ EXPOSE 22
 
 # Add a health check
 HEALTHCHECK CMD nc -zv localhost 22 || exit 1
+
+# Create users
+RUN /app/init.sh
+# Start sshd in foreground
+CMD ["/usr/sbin/sshd", "-D", "-e"]

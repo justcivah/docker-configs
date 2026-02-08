@@ -10,7 +10,7 @@ UsePAM no
 AllowTcpForwarding no
 X11Forwarding no
 PrintMotd no
-Subsystem sftp internal-sftp
+Subsystem sftp /usr/lib/openssh/sftp-server -f AUTH -l INFO
 
 # Restrict users to SFTP only and chroot them
 Match Group sftpusers
