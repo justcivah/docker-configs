@@ -37,7 +37,7 @@ def build_weather_message():
 
         except Exception as e:
             logging.error("Error checking weather for %s: %s", name, e)
-            warning_lines.append(f"<b>name}</b>: unable to fetch forecast")
+            warning_lines.append(f"<b>{name}</b>: unable to fetch forecast")
 
     if warning_lines:
         return warning_lines
