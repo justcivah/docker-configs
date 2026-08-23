@@ -17,6 +17,9 @@ async def weather_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for message in messages:
             await update.message.reply_text(message, parse_mode=ParseMode.HTML)
 
+    else:
+        await update.message.reply_text("☀️ No rain expected tomorrow")
+
 
 async def daily_check(context: ContextTypes.DEFAULT_TYPE):
     chat_id = load_chat_id()

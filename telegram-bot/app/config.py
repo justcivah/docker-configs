@@ -9,7 +9,7 @@ load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 # File where the chat id is saved
-CHAT_ID_FILE = "chat_id.txt"
+CHAT_ID_FILE = "data/chat_id.txt"
 
 
 # WEATHER
