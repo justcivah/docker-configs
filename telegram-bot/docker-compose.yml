@@ -1,0 +1,13 @@
+services:
+  telegram-bot:
+    container_name: telegram-bot
+    build: .
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+    volumes:
+      - telegram-bot-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  telegram-bot-data:
+    name: "telegram-bot-data"
