@@ -14,7 +14,7 @@ services:
       SNOOPER_ENABLED: "false"
       MAX_BUILD_HEIGHT: "1024"
       MODE: "survival"
-      LEVEL_TYPE: "large_biomes"
+      LEVEL_TYPE: "normal"
     volumes:
       - minecraft-server-data:/data
     tty: true
