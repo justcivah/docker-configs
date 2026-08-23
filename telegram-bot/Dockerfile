@@ -5,12 +5,9 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# install python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# copy the whole project
+# copy the whole code
 COPY app/ .
+RUN pip install --no-cache-dir -r requirements.txt
 
 VOLUME ["/app/data"]
 
