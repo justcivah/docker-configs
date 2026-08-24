@@ -16,7 +16,7 @@ CHAT_ID_FILE = "data/chat_id.txt"
 API_URL = "https://api.open-meteo.com/v1/forecast"
 
 # Rain probability threshold that triggers warnings
-RAIN_PROBABILITY_THRESHOLD = 50
+RAIN_PROBABILITY_THRESHOLD = 60
 
 # Time of the day the check is done
 CHECK_HOUR = 19
