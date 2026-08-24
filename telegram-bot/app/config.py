@@ -13,6 +13,8 @@ CHAT_ID_FILE = "data/chat_id.txt"
 
 
 # WEATHER
+API_URL = "https://api.open-meteo.com/v1/forecast"
+
 # Rain probability threshold that triggers warnings
 RAIN_PROBABILITY_THRESHOLD = 50
 

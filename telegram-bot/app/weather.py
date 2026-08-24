@@ -2,9 +2,7 @@ import logging
 import requests
 import time
 
-from config import LOCATIONS, RAIN_PROBABILITY_THRESHOLD, TIMEZONE
-
-API_URL = "https://api.open-meteo.com/v1/forecast"
+from config import LOCATIONS, RAIN_PROBABILITY_THRESHOLD, TIMEZONE, API_URL
 
 
 def check_rain_tomorrow(lat, lon, retries=5, backoff=3):
