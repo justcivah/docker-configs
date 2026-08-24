@@ -19,8 +19,8 @@ API_URL = "https://api.open-meteo.com/v1/forecast"
 RAIN_PROBABILITY_THRESHOLD = 50
 
 # Time of the day the check is done
-CHECK_HOUR = 20
-CHECK_MINUTE = 00
+CHECK_HOUR = 19
+CHECK_MINUTE = 55
 TIMEZONE = "Europe/Rome"
 
 # Locations coordinates
