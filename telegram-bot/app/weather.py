@@ -1,12 +1,13 @@
 import logging
 import requests
+import time
 
 from config import LOCATIONS, RAIN_PROBABILITY_THRESHOLD, TIMEZONE
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
 
 
-def check_rain_tomorrow(lat, lon):
+def check_rain_tomorrow(lat, lon, retries=5, backoff=3):
     params = {
         "latitude": lat,
         "longitude": lon,
@@ -14,14 +15,21 @@ def check_rain_tomorrow(lat, lon):
         "timezone": TIMEZONE,
         "forecast_days": 2,
     }
-    resp = requests.get(API_URL, params=params, timeout=15)
-    resp.raise_for_status()
-    daily = resp.json()["daily"]
 
-    # index 0 = today, index 1 = tomorrow
-    probability = daily["precipitation_probability_max"][1]
-    mm = daily["precipitation_sum"][1]
-    return probability, mm
+    for attempt in range(retries + 1):
+        try:
+            resp = requests.get(API_URL, params=params, timeout=20)
+            resp.raise_for_status()
+            daily = resp.json()["daily"]
+            return daily["precipitation_probability_max"][1], daily["precipitation_sum"][1]
+        
+        except Exception as e:
+            logging.warning("Attempt %d failed for (%s,%s): %r", attempt + 1, lat, lon, e)
+
+            if attempt < retries:
+                time.sleep(backoff)
+            else:
+                raise
 
 
 def build_weather_message():
