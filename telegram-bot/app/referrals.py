@@ -26,13 +26,13 @@ ERROR_MESSAGES = {
     "AUTH.INVALID.SESSION": "Session expired, the bot will log in again on the next check",
     "CRS.KO": "Health card not found, check TAX_CODE and HEALTH_CARD in the .env file",
     "CRS.NON.ATTIVA": "The health card is not active",
-    "RICETTA.RICERCA.KO": "Prescription not found",
-    "RICETTA.NON.TROVATA.MESSAGE": "Prescription not found",
-    "RICETTA.RICERCA.FUORI.REGIONE.KO": "This prescription can't be booked online",
+    "RICETTA.RICERCA.KO": "Referral not found",
+    "RICETTA.NON.TROVATA.MESSAGE": "Referral not found",
+    "RICETTA.RICERCA.FUORI.REGIONE.KO": "This referral can't be booked online",
     "RICETTA.RICERCA.FARMACEUTICA": "This is a pharmaceutical prescription, it can't be booked",
-    "RICETTA.SCADUTA.MESSAGE": "The prescription has expired",
-    "RICETTA.NON.PRENOTABILE.MESSAGE": "The service in this prescription can't be booked right now",
-    "RICETTA.PRENOTATA.MESSAGE": "The prescription has already been booked",
+    "RICETTA.SCADUTA.MESSAGE": "The referral has expired",
+    "RICETTA.NON.PRENOTABILE.MESSAGE": "The service in this referral can't be booked right now",
+    "RICETTA.PRENOTATA.MESSAGE": "The referral has already been booked",
     "DISPONIBILITA.KO.MESSAGE": "No suitable availability online, call the regional Contact Center",
 }
 
@@ -57,7 +57,7 @@ def _is_iup(code):
 
 
 def classify_code(code):
-    """Returns the field name the backend expects for this kind of prescription code."""
+    """Returns the field name the backend expects for this kind of referral code."""
     if re.fullmatch(r"R[A-Z0-9]{10}", code):
         return "iurp"
     if re.fullmatch(r"[A-Z0-9]{15}", code) and not code.isdigit():
@@ -132,7 +132,7 @@ class BookingClient:
         self.token = self.separator.join([self.token, TAX_CODE, HEALTH_CARD])
         return user["cittadino"]
 
-    def search_prescription(self, code, kind):
+    def search_referral(self, code, kind):
         criteria = {
             "codiceFiscale": TAX_CODE,
             "iup": None, "iurp": None, "nre": None, "rur": None,
@@ -144,17 +144,17 @@ class BookingClient:
         }
         criteria[kind] = code
 
-        prescriptions = (self._call("pgpcitt_ricerca_ricetta", criteria) or {}).get("ricette") or []
-        for prescription in prescriptions:
-            module_id = (prescription.get("modulo") or {}).get("id")
-            if code in (prescription.get("iup"), prescription.get("iurp"), module_id):
-                return prescription
-        if prescriptions:
-            return prescriptions[0]
+        referrals = (self._call("pgpcitt_ricerca_ricetta", criteria) or {}).get("ricette") or []
+        for referral in referrals:
+            module_id = (referral.get("modulo") or {}).get("id")
+            if code in (referral.get("iup"), referral.get("iurp"), module_id):
+                return referral
+        if referrals:
+            return referrals[0]
         raise BookingError("RICETTA.RICERCA.KO")
 
-    def unlock_prescription(self, nre):
-        # Searching an electronic prescription locks it, the website always unlocks it on exit
+    def unlock_referral(self, nre):
+        # Searching an electronic referral locks it, the website always unlocks it on exit
         self._call("pgpcitt_sblocca_ricetta_elettronica", {"codiceFiscale": TAX_CODE, "nre": nre})
 
     def find_zones(self, provinces):
@@ -171,17 +171,17 @@ class BookingClient:
             "abilitazioneNre": z.get("abilitazioneNre"),
         } for z in zones if z.get("codiceProvincia") in codes]
 
-    def search_availability(self, citizen, prescription, zone):
+    def search_availability(self, citizen, referral, zone):
         today = datetime.now(ZoneInfo(TIMEZONE)).replace(hour=0, minute=0, second=0, microsecond=0)
 
-        prescription = dict(prescription)
-        prescription["appuntamentiUnificati"] = None
+        referral = dict(referral)
+        referral["appuntamentiUnificati"] = None
 
         criteria = {
             "codiceFiscale": TAX_CODE,
             "zona": zone,
-            "ricetta": prescription,
-            "tipoPrestazione": guess_visit_type(prescription),
+            "ricetta": referral,
+            "tipoPrestazione": guess_visit_type(referral),
             "presidi": [],
             "aziende": [],
             "recapiti": {"telefono": citizen.get("telefono"), "cellulare": None, "email": citizen.get("email")},
@@ -206,21 +206,21 @@ class BookingClient:
         return self._call("pgpcitt_ricerca_disponibilita", criteria) or {}
 
 
-def guess_visit_type(prescription):
+def guess_visit_type(referral):
     """Same logic the website uses to decide between first visit ("O"), follow-up ("Z") and urgent ("U")."""
-    if prescription.get("tipoPrestazione"):
-        return prescription["tipoPrestazione"]
-    if (prescription.get("priorita") or "P") == "U":
+    if referral.get("tipoPrestazione"):
+        return referral["tipoPrestazione"]
+    if (referral.get("priorita") or "P") == "U":
         return "U"
 
     visit_type = None
-    for service in prescription.get("prestazioni") or []:
+    for service in referral.get("prestazioni") or []:
         description = re.sub(r"\s", "", service.get("descrizione") or "")
         if "(PRIMAVISITA)" in description:
             visit_type = "O"
         if "(CONTROLLO)" in description:
             visit_type = "Z"
-        if visit_type is None and prescription.get("flagEsenzionePatologia") == "S":
+        if visit_type is None and referral.get("flagEsenzionePatologia") == "S":
             visit_type = "Z"
 
     # The website asks the user when it can't tell, default to first visit
@@ -291,9 +291,9 @@ def extract_slots(availability):
     return sorted((s for s in slots if s), key=lambda s: s["date"])
 
 
-def extract_booking(prescription):
-    """Returns the earliest appointment booked with the prescription, None if it isn't booked."""
-    appointments = prescription.get("appuntamenti") or {}
+def extract_booking(referral):
+    """Returns the earliest appointment booked with the referral, None if it isn't booked."""
+    appointments = referral.get("appuntamenti") or {}
 
     entries = list(appointments.get("singoli") or [])
     for group in (appointments.get("combinati") or []) + (appointments.get("associati") or []):
@@ -303,11 +303,11 @@ def extract_booking(prescription):
     return min((b for b in booked if b), key=lambda b: b["date"], default=None)
 
 
-def check_prescription(code, retries=3, backoff=10):
-    """Logs in, looks up the prescription and returns (service description, sorted list of free slots, booking)."""
+def check_referral(code, retries=3, backoff=10):
+    """Logs in, looks up the referral and returns (service description, sorted list of free slots, booking)."""
     kind = classify_code(code)
     if kind is None:
-        raise BookingError("CODE.INVALID", "Invalid prescription code")
+        raise BookingError("CODE.INVALID", "Invalid referral code")
 
     for attempt in range(retries + 1):
         client = BookingClient()
@@ -315,29 +315,29 @@ def check_prescription(code, retries=3, backoff=10):
             client.open_session()
             citizen = client.login()
 
-            prescription = client.search_prescription(code, kind)
+            referral = client.search_referral(code, kind)
             slots = {}
             try:
                 for zone in client.find_zones(PROVINCES):
-                    for slot in extract_slots(client.search_availability(citizen, prescription, zone)):
+                    for slot in extract_slots(client.search_availability(citizen, referral, zone)):
                         if slot["province"] in PROVINCES:
                             slots[(slot["date"], slot["place"])] = slot
             finally:
-                nre = (prescription.get("modulo") or {}).get("id") if kind != "nre" else code
+                nre = (referral.get("modulo") or {}).get("id") if kind != "nre" else code
                 if nre and classify_code(nre) == "nre":
                     try:
-                        client.unlock_prescription(nre)
+                        client.unlock_referral(nre)
                     except Exception as e:
-                        logging.warning("Unable to unlock prescription %s: %r", nre, e)
+                        logging.warning("Unable to unlock referral %s: %r", nre, e)
 
-            description = ", ".join(p.get("descrizione") or "" for p in prescription.get("prestazioni") or [])
-            return description, sorted(slots.values(), key=lambda s: s["date"]), extract_booking(prescription)
+            description = ", ".join(p.get("descrizione") or "" for p in referral.get("prestazioni") or [])
+            return description, sorted(slots.values(), key=lambda s: s["date"]), extract_booking(referral)
 
         except BookingError:
             raise
 
         except Exception as e:
-            logging.warning("Attempt %d failed for prescription %s: %r", attempt + 1, code, e)
+            logging.warning("Attempt %d failed for referral %s: %r", attempt + 1, code, e)
 
             if attempt < retries:
                 time.sleep(backoff)

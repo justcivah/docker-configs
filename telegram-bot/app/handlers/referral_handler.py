@@ -9,9 +9,9 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
-from prescriptions import check_prescription, classify_code, normalize_code, BookingError
-from config import TAX_CODE, HEALTH_CARD, TIMEZONE, PRESCRIPTION_SLOTS_SHOWN, PRESCRIPTION_NOTIFICATION_RESET
-from storage import load_prescriptions, save_prescriptions
+from referrals import check_referral, classify_code, normalize_code, BookingError
+from config import TAX_CODE, HEALTH_CARD, TIMEZONE, REFERRAL_SLOTS_SHOWN, REFERRAL_NOTIFICATION_RESET
+from storage import load_referrals, save_referrals
 
 
 def clean_visit_name(description):
@@ -42,9 +42,20 @@ def format_booking(booking):
     return f"📅 Booked appointment\n{format_slot(booking)}"
 
 
+def earliest_per_place(slots):
+    """Keeps only the earliest slot of each place, the slots are already sorted by date."""
+    places = set()
+    earliest = []
+    for slot in slots:
+        if slot["place"] not in places:
+            places.add(slot["place"])
+            earliest.append(slot)
+    return earliest
+
+
 def format_results(code, description, slots, booking=None):
     """Returns the HTML messages to send: the visit name, the booked appointment, then one message for each of the
-    earliest slots."""
+    earliest places."""
     messages = [format_title(code, description)]
     if booking:
         messages.append(format_booking(booking))
@@ -53,7 +64,7 @@ def format_results(code, description, slots, booking=None):
         messages.append("No availability right now")
         return messages
 
-    messages.extend(format_slot(slot) for slot in slots[:PRESCRIPTION_SLOTS_SHOWN])
+    messages.extend(format_slot(slot) for slot in earliest_per_place(slots)[:REFERRAL_SLOTS_SHOWN])
     return messages
 
 
@@ -73,45 +84,47 @@ def notifiable_slots(slots, booking):
     return [s for s in slots if booking is None or s["date"] < booking["date"]]
 
 
-def should_notify(notified, slots, now):
-    """Notifies when the earliest slot is earlier than the last notified one, or when that one has expired."""
-    if not slots:
-        return False
-    if notified is None:
-        return True
-    if now - datetime.fromisoformat(notified["at"]) >= timedelta(seconds=PRESCRIPTION_NOTIFICATION_RESET):
-        return True
-    return slots[0]["date"] < datetime.fromisoformat(notified["date"])
+def is_expired(notification, now):
+    return now - datetime.fromisoformat(notification["at"]) >= timedelta(seconds=REFERRAL_NOTIFICATION_RESET)
 
 
-def new_notified(slots, now):
-    return {"date": slots[0]["date"].isoformat(), "at": now.isoformat()} if slots else None
+def slots_to_notify(notified, slots):
+    """Returns the earliest slot of each place, when the place wasn't notified yet or the slot is earlier than the
+    notified one, up to the number of slots shown."""
+    new_slots = [s for s in earliest_per_place(slots)
+                 if s["place"] not in notified or s["date"] < datetime.fromisoformat(notified[s["place"]]["date"])]
+    return new_slots[:REFERRAL_SLOTS_SHOWN]
+
+
+def notifications(slots, now):
+    """Returns the notified slots, by place."""
+    return {s["place"]: {"date": s["date"].isoformat(), "at": now.isoformat()} for s in slots}
 
 
 async def run_check(code):
-    return await asyncio.to_thread(check_prescription, code)
+    return await asyncio.to_thread(check_referral, code)
 
 
 async def parse_code(update: Update, context: ContextTypes.DEFAULT_TYPE, command):
-    """Validates the command arguments and returns the prescription code, None if they are invalid."""
+    """Validates the command arguments and returns the referral code, None if they are invalid."""
     if not TAX_CODE or len(HEALTH_CARD) != 5:
         await update.message.reply_text("⚠️ TAX_CODE and HEALTH_CARD must be set in the .env file")
         return None
 
     if not context.args:
-        await update.message.reply_text(f"Usage: /{command} {{prescription_code}}")
+        await update.message.reply_text(f"Usage: /{command} {{referral_code}}")
         return None
 
     code = normalize_code("".join(context.args))
     if classify_code(code) is None:
-        await update.message.reply_text("⚠️ Invalid prescription code")
+        await update.message.reply_text("⚠️ Invalid referral code")
         return None
 
     return code
 
 
 async def check_and_reply(update: Update, code):
-    """Checks the prescription once, replying with the booked appointment and the slots found."""
+    """Checks the referral once, replying with the booked appointment and the slots found."""
     await update.message.reply_text("🔎 Checking availability...")
 
     try:
@@ -120,7 +133,7 @@ async def check_and_reply(update: Update, code):
         await update.message.reply_text(f"⚠️ {e}")
         return None
     except Exception as e:
-        logging.error("Error checking prescription %s: %r", code, e)
+        logging.error("Error checking referral %s: %r", code, e)
         await update.message.reply_text("⚠️ Unable to reach the booking website, try again later")
         return None
 
@@ -129,19 +142,19 @@ async def check_and_reply(update: Update, code):
     return description, slots, booking
 
 
-async def check_prescription_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    code = await parse_code(update, context, "check_prescription")
+async def check_referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    code = await parse_code(update, context, "check_referral")
     if code is not None:
         await check_and_reply(update, code)
 
 
-async def monitor_prescription_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    code = await parse_code(update, context, "monitor_prescription")
+async def monitor_referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    code = await parse_code(update, context, "monitor_referral")
     if code is None:
         return
 
-    if code in load_prescriptions():
-        await update.message.reply_text("⚠️ This prescription is already being watched")
+    if code in load_referrals():
+        await update.message.reply_text("⚠️ This referral is already being watched")
         return
 
     result = await check_and_reply(update, code)
@@ -150,85 +163,86 @@ async def monitor_prescription_command(update: Update, context: ContextTypes.DEF
     description, slots, booking = result
 
     # The slots were just shown, so they count as notified
-    prescriptions = load_prescriptions()
-    prescriptions[code] = {
+    shown = earliest_per_place(slots)[:REFERRAL_SLOTS_SHOWN]
+    referrals = load_referrals()
+    referrals[code] = {
         "chat_id": update.effective_chat.id,
         "description": description,
         "earliest": slots[0]["date"].isoformat() if slots else None,
         "booking": serialize_booking(booking),
-        "notified": new_notified(notifiable_slots(slots, booking), datetime.now(ZoneInfo(TIMEZONE))),
+        "notified": notifications(notifiable_slots(shown, booking), datetime.now(ZoneInfo(TIMEZONE))),
         "last_error": None,
     }
-    save_prescriptions(prescriptions)
+    save_referrals(referrals)
 
     await update.message.reply_text("🔔 You will be notified when an earlier slot becomes available")
 
 
-async def stop_prescription_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def stop_referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Usage: /stop_prescription {prescription_code}")
+        await update.message.reply_text("Usage: /stop_referral {referral_code}")
         return
 
     code = normalize_code("".join(context.args))
-    prescriptions = load_prescriptions()
+    referrals = load_referrals()
 
-    if prescriptions.pop(code, None) is None:
-        await update.message.reply_text("⚠️ This prescription is not being watched")
+    if referrals.pop(code, None) is None:
+        await update.message.reply_text("⚠️ This referral is not being watched")
         return
 
-    save_prescriptions(prescriptions)
-    await update.message.reply_text(f"🔕 Stopped watching prescription {code}")
+    save_referrals(referrals)
+    await update.message.reply_text(f"🔕 Stopped watching referral {code}")
 
 
-async def prescriptions_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    prescriptions = load_prescriptions()
+async def referrals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    referrals = load_referrals()
 
-    if not prescriptions:
-        await update.message.reply_text("No prescription is being watched")
+    if not referrals:
+        await update.message.reply_text("No referral is being watched")
         return
 
-    for code, data in prescriptions.items():
+    for code, data in referrals.items():
         message = f"{format_title(code, data.get('description'))}\nEarliest slot: {format_date(data.get('earliest'))}"
         if data.get("booking"):
             message += f"\nBooked: {format_date(data['booking']['date'])}"
         await update.message.reply_text(message, parse_mode=ParseMode.HTML)
 
 
-async def periodic_prescription_check(context: ContextTypes.DEFAULT_TYPE):
-    for code, data in load_prescriptions().items():
+async def periodic_referral_check(context: ContextTypes.DEFAULT_TYPE):
+    for code, data in load_referrals().items():
         chat_id = data["chat_id"]
 
         try:
             description, slots, booking = await run_check(code)
         except Exception as e:
-            logging.error("Error checking prescription %s: %r", code, e)
+            logging.error("Error checking referral %s: %r", code, e)
             error = str(e) if isinstance(e, BookingError) else "Unable to reach the booking website"
 
             # Only notify errors once, until they change
-            prescriptions = load_prescriptions()
-            if code in prescriptions and prescriptions[code].get("last_error") != error:
-                prescriptions[code]["last_error"] = error
-                save_prescriptions(prescriptions)
-                await context.bot.send_message(chat_id=chat_id, text=f"⚠️ Prescription {code}: {error}")
+            referrals = load_referrals()
+            if code in referrals and referrals[code].get("last_error") != error:
+                referrals[code]["last_error"] = error
+                save_referrals(referrals)
+                await context.bot.send_message(chat_id=chat_id, text=f"⚠️ Referral {code}: {error}")
             continue
 
         now = datetime.now(ZoneInfo(TIMEZONE))
-        logging.info("Prescription %s: earliest=%s booking=%s", code,
+        logging.info("Referral %s: earliest=%s booking=%s", code,
                      slots[0]["date"] if slots else None, booking["date"] if booking else None)
 
-        # Reload, the prescription might have been removed while checking
-        prescriptions = load_prescriptions()
-        if code not in prescriptions:
+        # Reload, the referral might have been removed while checking
+        referrals = load_referrals()
+        if code not in referrals:
             continue
-        data = prescriptions[code]
+        data = referrals[code]
         previous_booking = load_booking(data)
 
         # Once the visit is done there's nothing left to watch, its appointment might also disappear afterwards
         visit = booking or previous_booking
         if visit and visit["date"] <= now:
-            del prescriptions[code]
-            save_prescriptions(prescriptions)
-            await context.bot.send_message(chat_id=chat_id, text=f"✅ Visit done, stopped watching prescription {code}")
+            del referrals[code]
+            save_referrals(referrals)
+            await context.bot.send_message(chat_id=chat_id, text=f"✅ Visit done, stopped watching referral {code}")
             continue
 
         messages = []
@@ -237,18 +251,24 @@ async def periodic_prescription_check(context: ContextTypes.DEFAULT_TYPE):
             if booking is None:
                 messages.append("❌ The booked appointment was cancelled")
             elif previous_booking is None:
-                messages.append("📅 The prescription has been booked")
+                messages.append("📅 The referral has been booked")
             else:
                 messages.append("📅 The booked appointment has changed")
 
-            # The last notified slot was compared with the old booking, start over
-            data["notified"] = None
+        # The notified slots were compared with the old booking, so they start over when it changes. Otherwise each
+        # place expires on its own, then its earliest slot is notified again even if it's later
+        if booking_changed:
+            notified = {}
+        else:
+            notified = {p: n for p, n in (data.get("notified") or {}).items() if not is_expired(n, now)}
 
-        candidates = notifiable_slots(slots, booking)
-        if should_notify(data.get("notified"), candidates, now):
-            data["notified"] = new_notified(candidates, now)
-            messages.append("🩺 An earlier slot became available!")
-            messages.extend(format_results(code, description, candidates, booking))
+        new_slots = slots_to_notify(notified, notifiable_slots(slots, booking))
+        notified.update(notifications(new_slots, now))
+        data["notified"] = notified
+
+        if new_slots:
+            messages.append("🩺 New slots available!")
+            messages.extend(format_results(code, description, new_slots, booking))
         elif booking_changed:
             messages.append(format_title(code, description))
             if booking:
@@ -260,7 +280,7 @@ async def periodic_prescription_check(context: ContextTypes.DEFAULT_TYPE):
             "booking": serialize_booking(booking),
             "last_error": None,
         })
-        save_prescriptions(prescriptions)
+        save_referrals(referrals)
 
         for message in messages:
             await context.bot.send_message(chat_id=chat_id, text=message, parse_mode=ParseMode.HTML)

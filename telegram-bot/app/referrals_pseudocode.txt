@@ -1,0 +1,151 @@
+CONSTANTS:
+    // collection of provinces
+    PROVINCE
+    // max number of availabilities to show, the earliest of each place
+    REFERRAL_SLOTS_SHOWN
+    // time after which the last notified availability of a place expires (1 week)
+    REFERRAL_NOTIFICATION_RESET
+
+STATE:
+    // each one stores: id, name, chat, earliest, booking (date, time, location), last_error
+    // and notified: for each place, the date of the last notified availability and when it was notified
+    monitored_referrals
+
+
+// helper function
+// a single search of the referral returns its name, its booking (if any) and the availabilities
+FUNCTION check(referral_id):
+    referral = search referral_id on the booking website
+    // cancelled appointments are ignored, with more than one the earliest is kept
+    booking = earliest not cancelled appointment of referral, or NONE
+    availabilities = []
+    FOR EACH p IN PROVINCE:
+        availabilities.append(all availabilities in p related to referral_id)
+    SORT availabilities BY date ASCENDING
+    RETURN referral.name, availabilities, booking
+
+
+// helper function
+// with a booking only the availabilities earlier than it are worth notifying
+FUNCTION notifiable(availabilities, booking):
+    IF booking is NONE:
+        RETURN availabilities
+    RETURN availabilities WHERE a.date < booking.date
+
+
+// helper function
+// availabilities are sorted, so the first one of each place is its earliest
+FUNCTION earliest_per_place(availabilities):
+    RETURN first availability of each place in availabilities, sorted BY date ASCENDING
+
+
+// helper function
+// a place is notified if it never was, or if its availability is earlier than the notified one
+FUNCTION to_notify(notified, availabilities):
+    new = earliest_per_place(availabilities) WHERE a.place NOT IN notified OR a.date < notified[a.place].date
+    // the places left out come out in the next checks
+    RETURN first REFERRAL_SLOTS_SHOWN items of new
+
+
+// check_referral
+COMMAND check_referral(referral_id):
+    IF referral_id is not valid:
+        send_message("Invalid referral code")
+        RETURN
+    name, availabilities, booking = check(referral_id)
+    send_message(name, referral_id)
+    IF booking is not NONE:
+        send_message(booking.date, booking.time, booking.location)
+    IF availabilities is empty:
+        send_message("No availability right now")
+    FOR EACH a IN first REFERRAL_SLOTS_SHOWN items of earliest_per_place(availabilities):
+        send_message(a.date, a.time, a.location)
+
+
+// monitor_referral
+COMMAND monitor_referral(referral_id):
+    IF referral_id is not valid:
+        send_message("Invalid referral code")
+    ELSE IF referral_id IN monitored_referrals:
+        send_message("This referral is already being monitored")
+    ELSE:
+        // same output as check_referral
+        name, availabilities, booking = check_referral(referral_id)
+        shown = first REFERRAL_SLOTS_SHOWN items of earliest_per_place(availabilities)
+        // what was just shown counts as notified
+        notified = {}
+        FOR EACH a IN notifiable(shown, booking):
+            notified[a.place] = (a.date, now)
+        monitored_referrals.add(referral_id, name, chat, booking, notified)
+        send_message("Monitoring started")
+
+
+// stop_referral
+COMMAND stop_referral(referral_id):
+    IF referral_id NOT IN monitored_referrals:
+        send_message("This referral is not being monitored")
+    ELSE:
+        monitored_referrals.remove(referral_id)
+        send_message("Monitoring stopped")
+
+
+// referrals
+COMMAND referrals():
+    IF monitored_referrals is empty:
+        send_message("No referral is being monitored")
+    FOR EACH mp IN monitored_referrals:
+        message = mp.name + " " + mp.id + " " + mp.earliest
+        IF mp.booking is not NONE:
+            message += mp.booking.date + " " + mp.booking.time
+        send_message(message)
+
+
+// periodic_referral_check
+JOB periodic_referral_check():
+    FOR EACH mp IN monitored_referrals:
+        TRY:
+            name, availabilities, booking = check(mp.id)
+        CATCH error:
+            // errors are notified only once, until they change
+            IF error != mp.last_error:
+                mp.last_error = error
+                send_message(mp.id, error)
+            CONTINUE
+
+        // the appointment might disappear from the referral after the visit, so the old booking counts too
+        visit = booking OR mp.booking
+        IF visit is not NONE AND visit.date <= now:
+            monitored_referrals.remove(mp.id)
+            send_message("Visit done, monitoring stopped")
+            CONTINUE
+
+        // booked, moved or cancelled since the last check
+        IF booking != mp.booking:
+            send_message("Booked" / "Booking changed" / "Booking cancelled")
+            // the notified availabilities were compared with the old booking, start over
+            mp.notified = {}
+
+        // each place expires on its own, then its earliest availability is notified again even if it's later
+        REMOVE FROM mp.notified the places WHERE now - timestamp >= REFERRAL_NOTIFICATION_RESET
+
+        new = to_notify(mp.notified, notifiable(availabilities, booking))
+        IF new is not empty:
+            // only the places shown count as notified
+            FOR EACH a IN new:
+                mp.notified[a.place] = (a.date, now)
+            send_message("New slots available!")
+            // title and booking are sent once, before the availabilities
+            send_message(mp.name, mp.id)
+            IF booking is not NONE:
+                send_message(booking.date, booking.time, booking.location)
+            FOR EACH a IN new:
+                send_message(a.date, a.time, a.location)
+        ELSE IF booking != mp.booking:
+            send_message(mp.name, mp.id)
+            IF booking is not NONE:
+                send_message(booking.date, booking.time, booking.location)
+
+        mp.name = name
+        mp.earliest = availabilities[0].date IF availabilities is not empty ELSE NONE
+        mp.booking = booking
+        mp.last_error = NONE

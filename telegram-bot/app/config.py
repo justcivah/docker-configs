@@ -30,7 +30,7 @@ LOCATIONS = {
 }
 
 
-# PRESCRIPTIONS
+# REFERRALS
 BOOKING_BASE_URL = "https://prenotasalute.regione.lombardia.it/prenotaonline/"
 
 # Provinces where availability is searched (BG, BS, CO, CR, LC, LO, MB, MI, MN, PV, SO, VA)
@@ -41,14 +41,15 @@ TAX_CODE = (os.getenv("TAX_CODE") or "").strip().upper()
 # Only the last 5 digits of the health card are needed
 HEALTH_CARD = (os.getenv("HEALTH_CARD") or "").strip()[-5:]
 
-# File where the watched prescriptions are saved
-PRESCRIPTIONS_FILE = "data/prescriptions.json"
+# File where the watched referrals are saved
+REFERRALS_FILE = "data/referrals.json"
 
 # Seconds between two availability checks
-PRESCRIPTION_CHECK_INTERVAL = 30 * 60
+REFERRAL_CHECK_INTERVAL = 30 * 60
 
-# Number of slots shown, the earliest ones among all provinces
-PRESCRIPTION_SLOTS_SHOWN = 3
+# Number of slots shown, the earliest of each place among all provinces
+REFERRAL_SLOTS_SHOWN = 3
 
-# Seconds after which the last notified slot expires, then the earliest slot is notified again even if it's later
-PRESCRIPTION_NOTIFICATION_RESET = 7 * 24 * 60 * 60
+# Seconds after which the last notified slot of a place expires, then its earliest slot is notified again even if
+# it's later
+REFERRAL_NOTIFICATION_RESET = 7 * 24 * 60 * 60
