@@ -1,15 +1,17 @@
+import asyncio
 import logging
 
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
-from storage import load_chat_id
+from config import ALLOWED_USER_ID
 from weather import build_weather_message
 
 
 async def weather_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    messages = build_weather_message()
+    # Runs in a thread, the requests and their retries would block the bot
+    messages = await asyncio.to_thread(build_weather_message)
 
     if messages is not None:
         await update.message.reply_text("🌧️ Tomorrow might rain in")
@@ -22,16 +24,15 @@ async def weather_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def daily_check(context: ContextTypes.DEFAULT_TYPE):
-    chat_id = load_chat_id()
-
-    if chat_id is None:
-        logging.warning("Send /start to start chatting with the bot")
+    if ALLOWED_USER_ID is None:
+        logging.warning("ALLOWED_USER_ID is not set, the weather can't be sent")
         return
 
-    messages = build_weather_message()
+    messages = await asyncio.to_thread(build_weather_message)
 
+    # In a private chat the chat id is the same as the user id
     if messages is not None:
-        await context.bot.send_message(chat_id=chat_id, text="🌧️ Tomorrow might rain in")
+        await context.bot.send_message(chat_id=ALLOWED_USER_ID, text="🌧️ Tomorrow might rain in")
 
         for message in messages:
-            await context.bot.send_message(chat_id=chat_id, text=message, parse_mode=ParseMode.HTML)
+            await context.bot.send_message(chat_id=ALLOWED_USER_ID, text=message, parse_mode=ParseMode.HTML)

@@ -8,8 +8,8 @@ load_dotenv()
 # GENERAL
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# File where the chat id is saved
-CHAT_ID_FILE = "data/chat_id.txt"
+# Telegram user allowed to use the bot, every other user is ignored (all of them if it's not set)
+ALLOWED_USER_ID = int((os.getenv("ALLOWED_USER_ID") or "").strip() or 0) or None
 
 
 # WEATHER

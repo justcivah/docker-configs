@@ -4,6 +4,7 @@ services:
     build: .
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      ALLOWED_USER_ID: ${ALLOWED_USER_ID}
       TAX_CODE: ${TAX_CODE}
       HEALTH_CARD: ${HEALTH_CARD}
     volumes:
