@@ -34,7 +34,7 @@ LOCATIONS = {
 BOOKING_BASE_URL = "https://prenotasalute.regione.lombardia.it/prenotaonline/"
 
 # Provinces where availability is searched (BG, BS, CO, CR, LC, LO, MB, MI, MN, PV, SO, VA)
-PROVINCES = ["CO", "VA", "LC", "MB", "MI"]
+PROVINCES = ["CO", "VA", "LC", "MB"]
 
 # Credentials used to log in on the booking website
 TAX_CODE = (os.getenv("TAX_CODE") or "").strip().upper()
