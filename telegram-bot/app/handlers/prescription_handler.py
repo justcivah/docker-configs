@@ -22,9 +22,13 @@ def capitalize_words(text):
     return re.sub(r"[^\W\d_]+", lambda m: m.group().capitalize(), (text or "").lower())
 
 
+def format_title(code, description):
+    return f"<b>{html.escape(clean_visit_name(description) or code)}</b>\n<code>{code}</code>"
+
+
 def format_results(code, description, slots):
     """Returns the HTML messages to send: the visit name, then one message for each of the earliest slots."""
-    messages = [f"<b>{html.escape(clean_visit_name(description) or code)}</b>\nPrescription {code}"]
+    messages = [format_title(code, description)]
 
     if not slots:
         messages.append("No availability right now")
@@ -120,12 +124,10 @@ async def prescriptions_command(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("No prescription is being watched")
         return
 
-    lines = []
     for code, data in prescriptions.items():
         earliest = datetime.fromisoformat(data["earliest"]).strftime("%d/%m/%Y %H:%M") if data.get("earliest") else "none"
-        lines.append(f"• <code>{code}</code> {html.escape(clean_visit_name(data.get('description')))}\n  earliest slot: {earliest}")
-
-    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+        await update.message.reply_text(f"{format_title(code, data.get('description'))}\nEarliest slot: {earliest}",
+                                        parse_mode=ParseMode.HTML)
 
 
 async def hourly_check(context: ContextTypes.DEFAULT_TYPE):
