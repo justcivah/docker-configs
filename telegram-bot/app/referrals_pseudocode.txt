@@ -11,7 +11,7 @@ CONSTANTS:
     REFERRAL_OTHER_PLACES_MAX_MARGIN
 
 STATE:
-    // each one stores: id, name, chat, earliest, booking (date, time, location), last_error
+    // each one stores: id, name, chat, booking (date, time, location), last_error
     // and notified: for each place, the date of the last notified availability and when it was notified
     monitored_referrals
 
@@ -102,7 +102,7 @@ COMMAND referrals():
     IF monitored_referrals is empty:
         send_message("No referral is being monitored")
     FOR EACH mp IN monitored_referrals:
-        message = mp.name + " " + mp.id + " " + mp.earliest
+        message = mp.name + " " + mp.id
         IF mp.booking is not NONE:
             message += mp.booking.date + " " + mp.booking.time
         send_message(message)
@@ -154,6 +154,5 @@ JOB periodic_referral_check():
                 send_message(booking.date, booking.time, booking.location)
 
         mp.name = name
-        mp.earliest = availabilities[0].date IF availabilities is not empty ELSE NONE
         mp.booking = booking
         mp.last_error = NONE

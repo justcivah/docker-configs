@@ -180,7 +180,6 @@ async def monitor_referral_command(update: Update, context: ContextTypes.DEFAULT
     referrals[code] = {
         "chat_id": update.effective_chat.id,
         "description": description,
-        "earliest": slots[0]["date"].isoformat() if slots else None,
         "booking": serialize_booking(booking),
         "notified": notifications(notifiable_slots(shown, booking, now), now),
         "last_error": None,
@@ -214,7 +213,7 @@ async def referrals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     for code, data in referrals.items():
-        message = f"{format_title(code, data.get('description'))}\nEarliest slot: {format_date(data.get('earliest'))}"
+        message = format_title(code, data.get("description"))
         if data.get("booking"):
             message += f"\nBooked: {format_date(data['booking']['date'])}"
         await update.message.reply_text(message, parse_mode=ParseMode.HTML)
@@ -288,7 +287,6 @@ async def periodic_referral_check(context: ContextTypes.DEFAULT_TYPE):
 
         data.update({
             "description": description,
-            "earliest": slots[0]["date"].isoformat() if slots else None,
             "booking": serialize_booking(booking),
             "last_error": None,
         })
