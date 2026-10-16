@@ -34,7 +34,7 @@ def format_date(value):
 def format_slot(slot):
     lines = [f"<b>{slot['date']:%d/%m/%Y - %H:%M}</b>", html.escape(capitalize_words(slot["place"]))]
     if slot["address"]:
-        lines.append(html.escape(capitalize_words(slot["address"])))
+        lines.append(f"<i>{html.escape(capitalize_words(slot['address']))}</i>")
     return "\n".join(lines)
 
 
