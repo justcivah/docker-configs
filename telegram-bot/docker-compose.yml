@@ -4,6 +4,8 @@ services:
     build: .
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TAX_CODE: ${TAX_CODE}
+      HEALTH_CARD: ${HEALTH_CARD}
     volumes:
       - telegram-bot-data:/app/data
     restart: unless-stopped
