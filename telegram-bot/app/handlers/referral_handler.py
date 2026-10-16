@@ -64,7 +64,7 @@ def format_results(code, description, slots, booking=None):
         messages.append(format_booking(booking))
 
     if not slots:
-        messages.append("No availability right now")
+        messages.append("No better slot than the booked one right now" if booking else "No availability right now")
         return messages
 
     messages.extend(format_slot(slot) for slot in earliest_per_place(slots)[:REFERRAL_SLOTS_SHOWN])
@@ -135,7 +135,8 @@ async def parse_code(update: Update, context: ContextTypes.DEFAULT_TYPE, command
 
 
 async def check_and_reply(update: Update, code):
-    """Checks the referral once, replying with the booked appointment and the slots found."""
+    """Checks the referral once, replying with the booked appointment and the slots found. With a booking only the
+    slots that would be notified are kept, the ones returned too."""
     await update.message.reply_text("🔎 Checking availability...")
 
     try:
@@ -148,6 +149,7 @@ async def check_and_reply(update: Update, code):
         await update.message.reply_text("⚠️ Unable to reach the booking website, try again later")
         return None
 
+    slots = notifiable_slots(slots, booking, datetime.now(ZoneInfo(TIMEZONE)))
     for message in format_results(code, description, slots, booking):
         await update.message.reply_text(message, parse_mode=ParseMode.HTML)
     return description, slots, booking
@@ -175,18 +177,17 @@ async def monitor_referral_command(update: Update, context: ContextTypes.DEFAULT
 
     # The slots were just shown, so they count as notified
     shown = earliest_per_place(slots)[:REFERRAL_SLOTS_SHOWN]
-    now = datetime.now(ZoneInfo(TIMEZONE))
     referrals = load_referrals()
     referrals[code] = {
         "chat_id": update.effective_chat.id,
         "description": description,
         "booking": serialize_booking(booking),
-        "notified": notifications(notifiable_slots(shown, booking, now), now),
+        "notified": notifications(shown, datetime.now(ZoneInfo(TIMEZONE))),
         "last_error": None,
     }
     save_referrals(referrals)
 
-    await update.message.reply_text("🔔 You will be notified when an earlier slot becomes available")
+    await update.message.reply_text("🔔 You will be notified when new slots become available")
 
 
 async def stop_referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

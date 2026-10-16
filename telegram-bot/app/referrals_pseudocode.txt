@@ -5,7 +5,7 @@ CONSTANTS:
     REFERRAL_SLOTS_SHOWN
     // time after which the last notified availability of a place expires (1 week)
     REFERRAL_NOTIFICATION_RESET
-    // with a booking, other places are notified if later by at most (time left before the visit / this) (3)
+    // with a booking, other places are notified if later by at most (time left before the visit / this)
     REFERRAL_OTHER_PLACES_DIVISOR
     // upper limit of how much later other places can be (60 days)
     REFERRAL_OTHER_PLACES_MAX_MARGIN
@@ -61,13 +61,17 @@ COMMAND check_referral(referral_id):
         send_message("Invalid referral code")
         RETURN
     name, availabilities, booking = check(referral_id)
+    // with a booking, only the availabilities that would be notified are worth showing
+    availabilities = notifiable(availabilities, booking)
     send_message(name, referral_id)
     IF booking is not NONE:
         send_message(booking.date, booking.time, booking.location)
     IF availabilities is empty:
-        send_message("No availability right now")
+        send_message("No better slot than the booked one right now" IF booking is not NONE
+                     ELSE "No availability right now")
     FOR EACH a IN first REFERRAL_SLOTS_SHOWN items of earliest_per_place(availabilities):
         send_message(a.date, a.time, a.location)
+    RETURN name, availabilities, booking
 
 
 // monitor_referral
@@ -77,15 +81,15 @@ COMMAND monitor_referral(referral_id):
     ELSE IF referral_id IN monitored_referrals:
         send_message("This referral is already being monitored")
     ELSE:
-        // same output as check_referral
+        // same output as check_referral, the availabilities returned are already the notifiable ones
         name, availabilities, booking = check_referral(referral_id)
         shown = first REFERRAL_SLOTS_SHOWN items of earliest_per_place(availabilities)
         // what was just shown counts as notified
         notified = {}
-        FOR EACH a IN notifiable(shown, booking):
+        FOR EACH a IN shown:
             notified[a.place] = (a.date, now)
         monitored_referrals.add(referral_id, name, chat, booking, notified)
-        send_message("Monitoring started")
+        send_message("You will be notified when new slots become available")
 
 
 // stop_referral
