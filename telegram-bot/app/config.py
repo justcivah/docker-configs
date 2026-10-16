@@ -45,7 +45,7 @@ HEALTH_CARD = (os.getenv("HEALTH_CARD") or "").strip()[-5:]
 PRESCRIPTIONS_FILE = "data/prescriptions.json"
 
 # Seconds between two availability checks
-PRESCRIPTION_CHECK_INTERVAL = 60 * 60
+PRESCRIPTION_CHECK_INTERVAL = 30 * 60
 
 # Number of slots shown, the earliest ones among all provinces
 PRESCRIPTION_SLOTS_SHOWN = 3
