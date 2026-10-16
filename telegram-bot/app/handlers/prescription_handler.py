@@ -1,31 +1,48 @@
 import asyncio
 import html
 import logging
+import re
 from datetime import datetime
 
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
-from booking import check_prescription, classify_code, normalize_code, BookingError
+from booking import check_prescription, classify_code, normalize_code, BookingError, PROVINCE_NAMES
 from config import TAX_CODE, HEALTH_CARD, PRESCRIPTION_SLOTS_SHOWN
 from storage import load_prescriptions, save_prescriptions
 
 
-def format_slots(code, description, slots):
-    header = f"<b>{html.escape(description or code)}</b>\nPrescription <code>{code}</code>"
+def clean_visit_name(description):
+    # Drops details like "(PRIMA VISITA)" from the visit name
+    return re.sub(r"\s+", " ", re.sub(r"\([^)]*\)", "", description or "")).strip()
+
+
+def capitalize_words(text):
+    return re.sub(r"[^\W\d_]+", lambda m: m.group().capitalize(), (text or "").lower())
+
+
+def format_results(code, description, slots):
+    """Returns the messages to send: the visit name, then for each province its name followed by one message per slot."""
+    messages = [f"{clean_visit_name(description) or code}\nPrescription {code}"]
 
     if not slots:
-        return f"{header}\n\nNo availability right now"
+        messages.append("No availability right now")
+        return messages
 
-    lines = []
-    for slot in slots[:PRESCRIPTION_SLOTS_SHOWN]:
-        line = f"• <b>{slot['date']:%d/%m/%Y %H:%M}</b> - {html.escape(slot['place'])}"
-        if slot["address"]:
-            line += f"\n  {html.escape(slot['address'])}"
-        lines.append(line)
+    shown = slots[:PRESCRIPTION_SLOTS_SHOWN]
+    # Slots are sorted by date, so provinces follow the order of their earliest slot
+    for province in dict.fromkeys(s["province"] for s in shown):
+        province_slots = [s for s in shown if s["province"] == province]
 
-    return f"{header}\n\n" + "\n".join(lines)
+        messages.append(PROVINCE_NAMES.get(province, province))
+        for slot in province_slots:
+            lines = [f"- {slot['date']:%d/%m/%Y - %H:%M}", capitalize_words(slot["place"])]
+            if slot["address"]:
+                lines.append(capitalize_words(slot["address"]))
+            messages.append("\n".join(lines))
+
+    return messages
 
 
 async def run_check(code):
@@ -59,7 +76,8 @@ async def check_from_command(update: Update, context: ContextTypes.DEFAULT_TYPE,
         await update.message.reply_text("⚠️ Unable to reach the booking website, try again later")
         return None
 
-    await update.message.reply_text(format_slots(code, description, slots), parse_mode=ParseMode.HTML)
+    for message in format_results(code, description, slots):
+        await update.message.reply_text(message)
     return code, description, slots
 
 
@@ -111,7 +129,7 @@ async def prescriptions_command(update: Update, context: ContextTypes.DEFAULT_TY
     lines = []
     for code, data in prescriptions.items():
         earliest = datetime.fromisoformat(data["earliest"]).strftime("%d/%m/%Y %H:%M") if data.get("earliest") else "none"
-        lines.append(f"• <code>{code}</code> {html.escape(data.get('description') or '')}\n  earliest slot: {earliest}")
+        lines.append(f"• <code>{code}</code> {html.escape(clean_visit_name(data.get('description')))}\n  earliest slot: {earliest}")
 
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
@@ -151,5 +169,5 @@ async def hourly_check(context: ContextTypes.DEFAULT_TYPE):
 
         if earliest is not None and (previous is None or earliest < previous):
             await context.bot.send_message(chat_id=chat_id, text="🩺 An earlier slot became available!")
-            await context.bot.send_message(chat_id=chat_id, text=format_slots(code, description, slots),
-                                           parse_mode=ParseMode.HTML)
+            for message in format_results(code, description, slots):
+                await context.bot.send_message(chat_id=chat_id, text=message)

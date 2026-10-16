@@ -47,5 +47,5 @@ PRESCRIPTIONS_FILE = "data/prescriptions.json"
 # Seconds between two availability checks
 PRESCRIPTION_CHECK_INTERVAL = 60 * 60
 
-# Number of slots shown in each message
-PRESCRIPTION_SLOTS_SHOWN = 3
+# Number of slots shown, the earliest ones among all provinces
+PRESCRIPTION_SLOTS_SHOWN = 5
