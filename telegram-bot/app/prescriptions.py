@@ -261,39 +261,50 @@ def _format_address(point):
     return ", ".join(p for p in (street, city) if p)
 
 
-def extract_slots(availability):
-    slots = []
+def _parse_appointment(appointment):
+    """Returns the date and place of an appointment, either a free slot or a booked one."""
+    date = parse_date(appointment.get("data"))
+    if date is None:
+        return None
 
+    unit = appointment.get("unitaErogante") or appointment.get("unitaErogatrice") or {}
+    facility = unit.get("presidio") or {}
+    company = facility.get("azienda") or appointment.get("azienda") or {}
+
+    point = facility.get("puntoIndirizzo") or unit.get("puntoIndirizzo") or {}
+    return {
+        "date": date,
+        "place": facility.get("descrizione") or unit.get("descrizione") or "",
+        "company": company.get("descrizione") or "",
+        "address": _format_address(point),
+        "province": (point.get("localita") or {}).get("siglaProvincia"),
+    }
+
+
+def extract_slots(availability):
     entries = list(availability.get("singole") or [])
     for group in (availability.get("combinate") or []) + (availability.get("associate") or []):
         if group.get("lista"):
             entries.append(group["lista"][0])
 
-    for entry in entries:
-        appointment = entry.get("appuntamento") or {}
-        date = parse_date(appointment.get("data"))
-        if date is None:
-            continue
+    slots = [_parse_appointment(entry.get("appuntamento") or {}) for entry in entries]
+    return sorted((s for s in slots if s), key=lambda s: s["date"])
 
-        unit = appointment.get("unitaErogante") or appointment.get("unitaErogatrice") or {}
-        facility = unit.get("presidio") or {}
-        company = facility.get("azienda") or appointment.get("azienda") or {}
 
-        point = facility.get("puntoIndirizzo") or unit.get("puntoIndirizzo") or {}
-        slots.append({
-            "date": date,
-            "place": facility.get("descrizione") or unit.get("descrizione") or "",
-            "company": company.get("descrizione") or "",
-            "address": _format_address(point),
-            "province": (point.get("localita") or {}).get("siglaProvincia"),
-        })
+def extract_booking(prescription):
+    """Returns the earliest appointment booked with the prescription, None if it isn't booked."""
+    appointments = prescription.get("appuntamenti") or {}
 
-    slots.sort(key=lambda s: s["date"])
-    return slots
+    entries = list(appointments.get("singoli") or [])
+    for group in (appointments.get("combinati") or []) + (appointments.get("associati") or []):
+        entries.extend(group.get("appuntamenti") or [])
+
+    booked = [_parse_appointment(a) for a in entries if not a.get("annullatoIl")]
+    return min((b for b in booked if b), key=lambda b: b["date"], default=None)
 
 
 def check_prescription(code, retries=3, backoff=10):
-    """Logs in, looks up the prescription and returns (service description, sorted list of free slots)."""
+    """Logs in, looks up the prescription and returns (service description, sorted list of free slots, booking)."""
     kind = classify_code(code)
     if kind is None:
         raise BookingError("CODE.INVALID", "Invalid prescription code")
@@ -320,7 +331,7 @@ def check_prescription(code, retries=3, backoff=10):
                         logging.warning("Unable to unlock prescription %s: %r", nre, e)
 
             description = ", ".join(p.get("descrizione") or "" for p in prescription.get("prestazioni") or [])
-            return description, sorted(slots.values(), key=lambda s: s["date"])
+            return description, sorted(slots.values(), key=lambda s: s["date"]), extract_booking(prescription)
 
         except BookingError:
             raise

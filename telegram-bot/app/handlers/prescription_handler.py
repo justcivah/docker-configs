@@ -2,14 +2,15 @@ import asyncio
 import html
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
-from booking import check_prescription, classify_code, normalize_code, BookingError
-from config import TAX_CODE, HEALTH_CARD, PRESCRIPTION_SLOTS_SHOWN
+from prescriptions import check_prescription, classify_code, normalize_code, BookingError
+from config import TAX_CODE, HEALTH_CARD, TIMEZONE, PRESCRIPTION_SLOTS_SHOWN, PRESCRIPTION_NOTIFICATION_RESET
 from storage import load_prescriptions, save_prescriptions
 
 
@@ -26,29 +27,73 @@ def format_title(code, description):
     return f"<b>{html.escape(clean_visit_name(description) or code)}</b>\n<code>{code}</code>"
 
 
-def format_results(code, description, slots):
-    """Returns the HTML messages to send: the visit name, then one message for each of the earliest slots."""
+def format_date(value):
+    return datetime.fromisoformat(value).strftime("%d/%m/%Y %H:%M") if value else "none"
+
+
+def format_slot(slot):
+    lines = [f"<b>{slot['date']:%d/%m/%Y - %H:%M}</b>", html.escape(capitalize_words(slot["place"]))]
+    if slot["address"]:
+        lines.append(html.escape(capitalize_words(slot["address"])))
+    return "\n".join(lines)
+
+
+def format_booking(booking):
+    return f"📅 Booked appointment\n{format_slot(booking)}"
+
+
+def format_results(code, description, slots, booking=None):
+    """Returns the HTML messages to send: the visit name, the booked appointment, then one message for each of the
+    earliest slots."""
     messages = [format_title(code, description)]
+    if booking:
+        messages.append(format_booking(booking))
 
     if not slots:
         messages.append("No availability right now")
         return messages
 
-    for slot in slots[:PRESCRIPTION_SLOTS_SHOWN]:
-        lines = [f"<b>{slot['date']:%d/%m/%Y - %H:%M}</b>", html.escape(capitalize_words(slot["place"]))]
-        if slot["address"]:
-            lines.append(html.escape(capitalize_words(slot["address"])))
-        messages.append("\n".join(lines))
-
+    messages.extend(format_slot(slot) for slot in slots[:PRESCRIPTION_SLOTS_SHOWN])
     return messages
+
+
+def serialize_booking(booking):
+    if booking is None:
+        return None
+    return {"date": booking["date"].isoformat(), "place": booking["place"], "address": booking["address"]}
+
+
+def load_booking(data):
+    booking = data.get("booking")
+    return {**booking, "date": datetime.fromisoformat(booking["date"])} if booking else None
+
+
+def notifiable_slots(slots, booking):
+    """Returns the slots worth notifying: all of them, or only the ones earlier than the booked appointment."""
+    return [s for s in slots if booking is None or s["date"] < booking["date"]]
+
+
+def should_notify(notified, slots, now):
+    """Notifies when the earliest slot is earlier than the last notified one, or when that one has expired."""
+    if not slots:
+        return False
+    if notified is None:
+        return True
+    if now - datetime.fromisoformat(notified["at"]) >= timedelta(seconds=PRESCRIPTION_NOTIFICATION_RESET):
+        return True
+    return slots[0]["date"] < datetime.fromisoformat(notified["date"])
+
+
+def new_notified(slots, now):
+    return {"date": slots[0]["date"].isoformat(), "at": now.isoformat()} if slots else None
 
 
 async def run_check(code):
     return await asyncio.to_thread(check_prescription, code)
 
 
-async def check_from_command(update: Update, context: ContextTypes.DEFAULT_TYPE, command):
-    """Validates the command arguments and checks the prescription once, replying with the slots found."""
+async def parse_code(update: Update, context: ContextTypes.DEFAULT_TYPE, command):
+    """Validates the command arguments and returns the prescription code, None if they are invalid."""
     if not TAX_CODE or len(HEALTH_CARD) != 5:
         await update.message.reply_text("⚠️ TAX_CODE and HEALTH_CARD must be set in the .env file")
         return None
@@ -62,10 +107,15 @@ async def check_from_command(update: Update, context: ContextTypes.DEFAULT_TYPE,
         await update.message.reply_text("⚠️ Invalid prescription code")
         return None
 
+    return code
+
+
+async def check_and_reply(update: Update, code):
+    """Checks the prescription once, replying with the booked appointment and the slots found."""
     await update.message.reply_text("🔎 Checking availability...")
 
     try:
-        description, slots = await run_check(code)
+        description, slots, booking = await run_check(code)
     except BookingError as e:
         await update.message.reply_text(f"⚠️ {e}")
         return None
@@ -74,26 +124,39 @@ async def check_from_command(update: Update, context: ContextTypes.DEFAULT_TYPE,
         await update.message.reply_text("⚠️ Unable to reach the booking website, try again later")
         return None
 
-    for message in format_results(code, description, slots):
+    for message in format_results(code, description, slots, booking):
         await update.message.reply_text(message, parse_mode=ParseMode.HTML)
-    return code, description, slots
+    return description, slots, booking
 
 
 async def check_prescription_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await check_from_command(update, context, "check_prescription")
+    code = await parse_code(update, context, "check_prescription")
+    if code is not None:
+        await check_and_reply(update, code)
 
 
-async def alert_prescription_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    result = await check_from_command(update, context, "alert_prescription")
+async def monitor_prescription_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    code = await parse_code(update, context, "monitor_prescription")
+    if code is None:
+        return
+
+    if code in load_prescriptions():
+        await update.message.reply_text("⚠️ This prescription is already being watched")
+        return
+
+    result = await check_and_reply(update, code)
     if result is None:
         return
-    code, description, slots = result
+    description, slots, booking = result
 
+    # The slots were just shown, so they count as notified
     prescriptions = load_prescriptions()
     prescriptions[code] = {
         "chat_id": update.effective_chat.id,
         "description": description,
         "earliest": slots[0]["date"].isoformat() if slots else None,
+        "booking": serialize_booking(booking),
+        "notified": new_notified(notifiable_slots(slots, booking), datetime.now(ZoneInfo(TIMEZONE))),
         "last_error": None,
     }
     save_prescriptions(prescriptions)
@@ -125,17 +188,18 @@ async def prescriptions_command(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     for code, data in prescriptions.items():
-        earliest = datetime.fromisoformat(data["earliest"]).strftime("%d/%m/%Y %H:%M") if data.get("earliest") else "none"
-        await update.message.reply_text(f"{format_title(code, data.get('description'))}\nEarliest slot: {earliest}",
-                                        parse_mode=ParseMode.HTML)
+        message = f"{format_title(code, data.get('description'))}\nEarliest slot: {format_date(data.get('earliest'))}"
+        if data.get("booking"):
+            message += f"\nBooked: {format_date(data['booking']['date'])}"
+        await update.message.reply_text(message, parse_mode=ParseMode.HTML)
 
 
-async def hourly_check(context: ContextTypes.DEFAULT_TYPE):
+async def periodic_prescription_check(context: ContextTypes.DEFAULT_TYPE):
     for code, data in load_prescriptions().items():
         chat_id = data["chat_id"]
 
         try:
-            description, slots = await run_check(code)
+            description, slots, booking = await run_check(code)
         except Exception as e:
             logging.error("Error checking prescription %s: %r", code, e)
             error = str(e) if isinstance(e, BookingError) else "Unable to reach the booking website"
@@ -148,22 +212,55 @@ async def hourly_check(context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(chat_id=chat_id, text=f"⚠️ Prescription {code}: {error}")
             continue
 
-        earliest = slots[0]["date"] if slots else None
-        previous = datetime.fromisoformat(data["earliest"]) if data.get("earliest") else None
-        logging.info("Prescription %s: earliest=%s previous=%s", code, earliest, previous)
+        now = datetime.now(ZoneInfo(TIMEZONE))
+        logging.info("Prescription %s: earliest=%s booking=%s", code,
+                     slots[0]["date"] if slots else None, booking["date"] if booking else None)
 
         # Reload, the prescription might have been removed while checking
         prescriptions = load_prescriptions()
         if code not in prescriptions:
             continue
-        prescriptions[code].update({
+        data = prescriptions[code]
+        previous_booking = load_booking(data)
+
+        # Once the visit is done there's nothing left to watch, its appointment might also disappear afterwards
+        visit = booking or previous_booking
+        if visit and visit["date"] <= now:
+            del prescriptions[code]
+            save_prescriptions(prescriptions)
+            await context.bot.send_message(chat_id=chat_id, text=f"✅ Visit done, stopped watching prescription {code}")
+            continue
+
+        messages = []
+        booking_changed = serialize_booking(booking) != data.get("booking")
+        if booking_changed:
+            if booking is None:
+                messages.append("❌ The booked appointment was cancelled")
+            elif previous_booking is None:
+                messages.append("📅 The prescription has been booked")
+            else:
+                messages.append("📅 The booked appointment has changed")
+
+            # The last notified slot was compared with the old booking, start over
+            data["notified"] = None
+
+        candidates = notifiable_slots(slots, booking)
+        if should_notify(data.get("notified"), candidates, now):
+            data["notified"] = new_notified(candidates, now)
+            messages.append("🩺 An earlier slot became available!")
+            messages.extend(format_results(code, description, candidates, booking))
+        elif booking_changed:
+            messages.append(format_title(code, description))
+            if booking:
+                messages.append(format_booking(booking))
+
+        data.update({
             "description": description,
-            "earliest": earliest.isoformat() if earliest else None,
+            "earliest": slots[0]["date"].isoformat() if slots else None,
+            "booking": serialize_booking(booking),
             "last_error": None,
         })
         save_prescriptions(prescriptions)
 
-        if earliest is not None and (previous is None or earliest < previous):
-            await context.bot.send_message(chat_id=chat_id, text="🩺 An earlier slot became available!")
-            for message in format_results(code, description, slots):
-                await context.bot.send_message(chat_id=chat_id, text=message, parse_mode=ParseMode.HTML)
+        for message in messages:
+            await context.bot.send_message(chat_id=chat_id, text=message, parse_mode=ParseMode.HTML)

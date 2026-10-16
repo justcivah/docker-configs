@@ -48,4 +48,7 @@ PRESCRIPTIONS_FILE = "data/prescriptions.json"
 PRESCRIPTION_CHECK_INTERVAL = 60 * 60
 
 # Number of slots shown, the earliest ones among all provinces
-PRESCRIPTION_SLOTS_SHOWN = 5
+PRESCRIPTION_SLOTS_SHOWN = 3
+
+# Seconds after which the last notified slot expires, then the earliest slot is notified again even if it's later
+PRESCRIPTION_NOTIFICATION_RESET = 7 * 24 * 60 * 60
