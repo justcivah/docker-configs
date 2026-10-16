@@ -26,11 +26,12 @@ FUNCTION check(referral_id):
 
 
 // helper function
-// with a booking only the availabilities earlier than it are worth notifying
+// with a booking, the availabilities of its place are worth notifying only if earlier than it,
+// the other places are always worth notifying, as alternatives to the booked one
 FUNCTION notifiable(availabilities, booking):
     IF booking is NONE:
         RETURN availabilities
-    RETURN availabilities WHERE a.date < booking.date
+    RETURN availabilities WHERE a.place != booking.place OR a.date < booking.date
 
 
 // helper function

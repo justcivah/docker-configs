@@ -80,8 +80,8 @@ def load_booking(data):
 
 
 def notifiable_slots(slots, booking):
-    """Returns the slots worth notifying: all of them, or only the ones earlier than the booked appointment."""
-    return [s for s in slots if booking is None or s["date"] < booking["date"]]
+    """Returns the slots worth notifying: with a booking, the ones of its place only if they are earlier."""
+    return [s for s in slots if booking is None or s["place"] != booking["place"] or s["date"] < booking["date"]]
 
 
 def is_expired(notification, now):
