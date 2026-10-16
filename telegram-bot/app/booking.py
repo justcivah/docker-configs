@@ -22,11 +22,6 @@ PROVINCE_CODES = {
     "PV": "018", "CR": "019", "MN": "020", "LC": "097", "LO": "098", "MB": "108",
 }
 
-PROVINCE_NAMES = {
-    "VA": "Varese", "CO": "Como", "SO": "Sondrio", "MI": "Milano", "BG": "Bergamo", "BS": "Brescia",
-    "PV": "Pavia", "CR": "Cremona", "MN": "Mantova", "LC": "Lecco", "LO": "Lodi", "MB": "Monza e Brianza",
-}
-
 ERROR_MESSAGES = {
     "AUTH.INVALID.SESSION": "Session expired, the bot will log in again on the next check",
     "CRS.KO": "Health card not found, check TAX_CODE and HEALTH_CARD in the .env file",

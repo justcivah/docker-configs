@@ -8,7 +8,7 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
-from booking import check_prescription, classify_code, normalize_code, BookingError, PROVINCE_NAMES
+from booking import check_prescription, classify_code, normalize_code, BookingError
 from config import TAX_CODE, HEALTH_CARD, PRESCRIPTION_SLOTS_SHOWN
 from storage import load_prescriptions, save_prescriptions
 
@@ -23,24 +23,18 @@ def capitalize_words(text):
 
 
 def format_results(code, description, slots):
-    """Returns the messages to send: the visit name, then for each province its name followed by one message per slot."""
-    messages = [f"{clean_visit_name(description) or code}\nPrescription {code}"]
+    """Returns the HTML messages to send: the visit name, then one message for each of the earliest slots."""
+    messages = [f"<b>{html.escape(clean_visit_name(description) or code)}</b>\nPrescription {code}"]
 
     if not slots:
         messages.append("No availability right now")
         return messages
 
-    shown = slots[:PRESCRIPTION_SLOTS_SHOWN]
-    # Slots are sorted by date, so provinces follow the order of their earliest slot
-    for province in dict.fromkeys(s["province"] for s in shown):
-        province_slots = [s for s in shown if s["province"] == province]
-
-        messages.append(PROVINCE_NAMES.get(province, province))
-        for slot in province_slots:
-            lines = [f"- {slot['date']:%d/%m/%Y - %H:%M}", capitalize_words(slot["place"])]
-            if slot["address"]:
-                lines.append(capitalize_words(slot["address"]))
-            messages.append("\n".join(lines))
+    for slot in slots[:PRESCRIPTION_SLOTS_SHOWN]:
+        lines = [f"<b>{slot['date']:%d/%m/%Y - %H:%M}</b>", html.escape(capitalize_words(slot["place"]))]
+        if slot["address"]:
+            lines.append(html.escape(capitalize_words(slot["address"])))
+        messages.append("\n".join(lines))
 
     return messages
 
@@ -77,7 +71,7 @@ async def check_from_command(update: Update, context: ContextTypes.DEFAULT_TYPE,
         return None
 
     for message in format_results(code, description, slots):
-        await update.message.reply_text(message)
+        await update.message.reply_text(message, parse_mode=ParseMode.HTML)
     return code, description, slots
 
 
@@ -170,4 +164,4 @@ async def hourly_check(context: ContextTypes.DEFAULT_TYPE):
         if earliest is not None and (previous is None or earliest < previous):
             await context.bot.send_message(chat_id=chat_id, text="🩺 An earlier slot became available!")
             for message in format_results(code, description, slots):
-                await context.bot.send_message(chat_id=chat_id, text=message)
+                await context.bot.send_message(chat_id=chat_id, text=message, parse_mode=ParseMode.HTML)
