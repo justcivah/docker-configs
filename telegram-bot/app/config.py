@@ -53,3 +53,6 @@ REFERRAL_SLOTS_SHOWN = 3
 # Seconds after which the last notified slot of a place expires, then its earliest slot is notified again even if
 # it's later
 REFERRAL_NOTIFICATION_RESET = 7 * 24 * 60 * 60
+
+# Seconds after the booked appointment within which the slots of other places are still notified
+REFERRAL_OTHER_PLACES_MARGIN = 30 * 24 * 60 * 60

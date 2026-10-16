@@ -5,6 +5,8 @@ CONSTANTS:
     REFERRAL_SLOTS_SHOWN
     // time after which the last notified availability of a place expires (1 week)
     REFERRAL_NOTIFICATION_RESET
+    // time after the booked appointment within which other places are still notified (30 days)
+    REFERRAL_OTHER_PLACES_MARGIN
 
 STATE:
     // each one stores: id, name, chat, earliest, booking (date, time, location), last_error
@@ -27,11 +29,12 @@ FUNCTION check(referral_id):
 
 // helper function
 // with a booking, the availabilities of its place are worth notifying only if earlier than it,
-// the other places are always worth notifying, as alternatives to the booked one
+// the ones of the other places, as alternatives to the booked one, only if within REFERRAL_OTHER_PLACES_MARGIN after it
 FUNCTION notifiable(availabilities, booking):
     IF booking is NONE:
         RETURN availabilities
-    RETURN availabilities WHERE a.place != booking.place OR a.date < booking.date
+    RETURN availabilities WHERE (a.place == booking.place AND a.date < booking.date)
+                             OR (a.place != booking.place AND a.date < booking.date + REFERRAL_OTHER_PLACES_MARGIN)
 
 
 // helper function

@@ -10,7 +10,9 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from referrals import check_referral, classify_code, normalize_code, BookingError
-from config import TAX_CODE, HEALTH_CARD, TIMEZONE, REFERRAL_SLOTS_SHOWN, REFERRAL_NOTIFICATION_RESET
+from config import (
+    TAX_CODE, HEALTH_CARD, TIMEZONE, REFERRAL_SLOTS_SHOWN, REFERRAL_NOTIFICATION_RESET, REFERRAL_OTHER_PLACES_MARGIN,
+)
 from storage import load_referrals, save_referrals
 
 
@@ -80,8 +82,13 @@ def load_booking(data):
 
 
 def notifiable_slots(slots, booking):
-    """Returns the slots worth notifying: with a booking, the ones of its place only if they are earlier."""
-    return [s for s in slots if booking is None or s["place"] != booking["place"] or s["date"] < booking["date"]]
+    """Returns the slots worth notifying: with a booking, the ones of its place only if they are earlier, the ones of
+    the other places only if they aren't much later."""
+    if booking is None:
+        return slots
+
+    margin = booking["date"] + timedelta(seconds=REFERRAL_OTHER_PLACES_MARGIN)
+    return [s for s in slots if s["date"] < (booking["date"] if s["place"] == booking["place"] else margin)]
 
 
 def is_expired(notification, now):
