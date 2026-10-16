@@ -54,5 +54,9 @@ REFERRAL_SLOTS_SHOWN = 3
 # it's later
 REFERRAL_NOTIFICATION_RESET = 7 * 24 * 60 * 60
 
-# Seconds after the booked appointment within which the slots of other places are still notified
-REFERRAL_OTHER_PLACES_MARGIN = 30 * 24 * 60 * 60
+# With a booking, the slots of other places are still notified if they are later by at most the time left before
+# the visit divided by this, e.g. 10 days for a visit in 30 days
+REFERRAL_OTHER_PLACES_DIVISOR = 3
+
+# Seconds, upper limit of how much later the slots of other places can be
+REFERRAL_OTHER_PLACES_MAX_MARGIN = 60 * 24 * 60 * 60

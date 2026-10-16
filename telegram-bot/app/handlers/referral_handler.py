@@ -11,7 +11,8 @@ from telegram.ext import ContextTypes
 
 from referrals import check_referral, classify_code, normalize_code, BookingError
 from config import (
-    TAX_CODE, HEALTH_CARD, TIMEZONE, REFERRAL_SLOTS_SHOWN, REFERRAL_NOTIFICATION_RESET, REFERRAL_OTHER_PLACES_MARGIN,
+    TAX_CODE, HEALTH_CARD, TIMEZONE, REFERRAL_SLOTS_SHOWN, REFERRAL_NOTIFICATION_RESET,
+    REFERRAL_OTHER_PLACES_DIVISOR, REFERRAL_OTHER_PLACES_MAX_MARGIN,
 )
 from storage import load_referrals, save_referrals
 
@@ -81,14 +82,17 @@ def load_booking(data):
     return {**booking, "date": datetime.fromisoformat(booking["date"])} if booking else None
 
 
-def notifiable_slots(slots, booking):
+def notifiable_slots(slots, booking, now):
     """Returns the slots worth notifying: with a booking, the ones of its place only if they are earlier, the ones of
     the other places only if they aren't much later."""
     if booking is None:
         return slots
 
-    margin = booking["date"] + timedelta(seconds=REFERRAL_OTHER_PLACES_MARGIN)
-    return [s for s in slots if s["date"] < (booking["date"] if s["place"] == booking["place"] else margin)]
+    # The further the visit, the longer it's worth waiting for another place
+    margin = min((booking["date"] - now) / REFERRAL_OTHER_PLACES_DIVISOR,
+                 timedelta(seconds=REFERRAL_OTHER_PLACES_MAX_MARGIN))
+    latest = booking["date"] + margin
+    return [s for s in slots if s["date"] < (booking["date"] if s["place"] == booking["place"] else latest)]
 
 
 def is_expired(notification, now):
@@ -171,13 +175,14 @@ async def monitor_referral_command(update: Update, context: ContextTypes.DEFAULT
 
     # The slots were just shown, so they count as notified
     shown = earliest_per_place(slots)[:REFERRAL_SLOTS_SHOWN]
+    now = datetime.now(ZoneInfo(TIMEZONE))
     referrals = load_referrals()
     referrals[code] = {
         "chat_id": update.effective_chat.id,
         "description": description,
         "earliest": slots[0]["date"].isoformat() if slots else None,
         "booking": serialize_booking(booking),
-        "notified": notifications(notifiable_slots(shown, booking), datetime.now(ZoneInfo(TIMEZONE))),
+        "notified": notifications(notifiable_slots(shown, booking, now), now),
         "last_error": None,
     }
     save_referrals(referrals)
@@ -269,7 +274,7 @@ async def periodic_referral_check(context: ContextTypes.DEFAULT_TYPE):
         else:
             notified = {p: n for p, n in (data.get("notified") or {}).items() if not is_expired(n, now)}
 
-        new_slots = slots_to_notify(notified, notifiable_slots(slots, booking))
+        new_slots = slots_to_notify(notified, notifiable_slots(slots, booking, now))
         notified.update(notifications(new_slots, now))
         data["notified"] = notified
 
